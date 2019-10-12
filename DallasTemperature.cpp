@@ -499,8 +499,8 @@ float DallasTemperature::getTempFByIndex(uint8_t deviceIndex) {
 int16_t DallasTemperature::calculateTemperature(const uint8_t* deviceAddress,
 		uint8_t* scratchPad) {
 
-	int16_t fpTemperature = (((int16_t) scratchPad[TEMP_MSB]) << 11)
-			| (((int16_t) scratchPad[TEMP_LSB]) << 3);
+
+	int16_t fpTemperature = ((int16_t)scratchPad[TEMP_MSB] << 8) | (int16_t)scratchPad[0];
 
 	/*
 	 DS1820 and DS18S20 have a 9-bit temperature register.
@@ -528,9 +528,18 @@ int16_t DallasTemperature::calculateTemperature(const uint8_t* deviceAddress,
 	 */
 
 	if (deviceAddress[0] == DS18S20MODEL) {
-		fpTemperature = ((fpTemperature & 0xfff0) << 3) - 32
-				+ (((scratchPad[COUNT_PER_C] - scratchPad[COUNT_REMAIN]) << 7)
-						/ scratchPad[COUNT_PER_C]);
+	    fpTemperature = fpTemperature << 3; // 9 bit resolution default
+	    if (scratchPad[7] == 0x10) {
+	      // "count remain" gives full 12 bit resolution
+	      fpTemperature = (fpTemperature & 0xFFF0) + 12 - scratchPad[6];
+	    }
+	} else {
+		uint8_t cfg = (scratchPad[4] & 0x60);
+		// at lower res, the low bits are undefined, so let's zero them
+		if (cfg == 0x00) fpTemperature = fpTemperature & ~7;  // 9 bit resolution, 93.75 ms
+		else if (cfg == 0x20) fpTemperature = fpTemperature & ~3; // 10 bit res, 187.5 ms
+		else if (cfg == 0x40) fpTemperature = fpTemperature & ~1; // 11 bit res, 375 ms
+		//// default is 12 bit resolution, 750 ms conversion time
 	}
 
 	return fpTemperature;
@@ -631,7 +640,7 @@ float DallasTemperature::rawToCelsius(int16_t raw) {
 	if (raw <= DEVICE_DISCONNECTED_RAW)
 		return DEVICE_DISCONNECTED_C;
 	// C = RAW/128
-	return (float) raw * 0.0078125;
+	return (float) raw/16.0;// * 0.0078125;
 
 }
 

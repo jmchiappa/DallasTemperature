@@ -229,6 +229,12 @@ private:
 	// used to requestTemperature with or without delay
 	bool waitForConversion;
 
+	// Prevent to start a new conversion
+	bool ConversionInProgress;
+
+	// time at the beginning of acquisition
+	unsigned long long started_time;
+
 	// used to requestTemperature to dynamically check if a conversion is complete
 	bool checkForConversion;
 

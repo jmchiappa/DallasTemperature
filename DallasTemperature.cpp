@@ -94,7 +94,7 @@ void DallasTemperature::setOneWire(OneWire* _oneWire) {
 	bitResolution = 9;
 	waitForConversion = true;
 	checkForConversion = true;
-
+	ConversionInProgress = false;
 }
 
 // initialise the bus
@@ -375,22 +375,31 @@ bool DallasTemperature::getCheckForConversion() {
 }
 
 bool DallasTemperature::isConversionComplete() {
+	int delms = millisToWaitForConversion(bitResolution);
 	uint8_t b = _wire->read_bit();
-	return (b == 1);
+	// Serial.print("start time = ");
+	// Serial.print(started_time);
+	// Serial.print("\tdelms = ");
+	// Serial.println(delms);
+	return (b == 1) || ((millis() - delms > started_time));
 }
 
 // sends command for all devices on the bus to perform a temperature conversion
 void DallasTemperature::requestTemperatures() {
 
-	_wire->reset();
-	_wire->skip();
-	_wire->write(STARTCONVO, parasite);
+	if(!ConversionInProgress) {
+		_wire->reset();
+		_wire->skip();
+		_wire->write(STARTCONVO, parasite);
 
-	// ASYNC mode?
-	if (!waitForConversion)
-		return;
-	blockTillConversionComplete(bitResolution);
-
+		// ASYNC mode?
+		if (!waitForConversion) {
+			started_time = millis();
+			ConversionInProgress = true;
+			return;
+		}
+		blockTillConversionComplete(bitResolution);
+	}
 }
 
 // sends command for one device to perform a temperature by address
@@ -398,24 +407,29 @@ void DallasTemperature::requestTemperatures() {
 // returns TRUE  otherwise
 bool DallasTemperature::requestTemperaturesByAddress(
 		const uint8_t* deviceAddress) {
+	if(!ConversionInProgress) {
 
-	uint8_t bitResolution = getResolution(deviceAddress);
-	if (bitResolution == 0) {
-		return false; //Device disconnected
-	}
+		uint8_t bitResolution = getResolution(deviceAddress);
+		if (bitResolution == 0) {
+			return false; //Device disconnected
+		}
 
-	_wire->reset();
-	_wire->select(deviceAddress);
-	_wire->write(STARTCONVO, parasite);
+		_wire->reset();
+		_wire->select(deviceAddress);
+		_wire->write(STARTCONVO, parasite);
 
-	// ASYNC mode?
-	if (!waitForConversion)
+		// ASYNC mode?
+		if (!waitForConversion) {
+			ConversionInProgress = true;
+			started_time = millis();
+			return true;
+		}
+
+		blockTillConversionComplete(bitResolution);
+
 		return true;
-
-	blockTillConversionComplete(bitResolution);
-
-	return true;
-
+	}
+	return false;
 }
 
 // Continue to check if the IC has responded with a temperature
@@ -423,7 +437,7 @@ void DallasTemperature::blockTillConversionComplete(uint8_t bitResolution) {
 
 	int delms = millisToWaitForConversion(bitResolution);
 	if (checkForConversion && !parasite) {
-		unsigned long now = millis();
+		unsigned long long now = millis();
 		while (!isConversionComplete() && (millis() - delms < now))
 			;
 	} else {
@@ -565,6 +579,7 @@ int16_t DallasTemperature::getTemp(const uint8_t* deviceAddress) {
 // DallasTemperature.h. It is a large negative number outside the
 // operating range of the device
 float DallasTemperature::getTempC(const uint8_t* deviceAddress) {
+	ConversionInProgress = false;
 	return rawToCelsius(getTemp(deviceAddress));
 }
 
